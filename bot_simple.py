@@ -1,121 +1,118 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, 
-CallbackQueryHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from config import Config
 from database import db
 from ai_handler import ai
 from datetime import datetime
+import logging
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 class InmoBot:
     def __init__(self):
         self.token = Config.TELEGRAM_TOKEN
+        self.application = Application.builder().token(self.token).build()
+        self.setup_handlers()
+        
+    def setup_handlers(self):
+        self.application.add_handler(CommandHandler("start", self.start))
+        self.application.add_handler(CommandHandler("help", self.help))
+        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+        self.application.add_handler(CallbackQueryHandler(self.button_callback))
+        self.application.add_error_handler(self.error_handler)
     
-    async def start(self, update: Update, context: 
-ContextTypes.DEFAULT_TYPE):
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         
         keyboard = [
-            [InlineKeyboardButton("🏠 Comprador", 
-callback_data="comprador")],
-            [InlineKeyboardButton("💰 Inversionista", 
-callback_data="inversionista")],
-            [InlineKeyboardButton("🔄 Recolocación", 
-callback_data="recolocacion")]
+            [InlineKeyboardButton("🏠 Comprador", callback_data="comprador")],
+            [InlineKeyboardButton("💰 Inversor", callback_data="inversor")],
+            [InlineKeyboardButton("📊 Asesoría", callback_data="asesoria")]
         ]
-        
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(
-            f"Hola {user.first_name}! Soy tu asistente inmobiliario de 
-Florida. ¿Cómo te puedo ayudar?",
-            reply_markup=reply_markup
-        )
+        welcome_text = f"Hola {user.first_name}! Soy tu asistente inmobiliario de Florida. ¿Cómo puedo ayudarte hoy?"
+        
+        await update.message.reply_text(welcome_text, reply_markup=reply_markup)
+        
+        try:
+            await db.registrar_usuario(
+                user_id=user.id,
+                username=user.username,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                fecha_registro=datetime.now()
+            )
+        except Exception as e:
+            logger.error(f"Error al registrar usuario: {e}")
     
-    async def button_handler(self, update: Update, context: 
-ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        await query.answer()
-        
-        client_type = query.data
-        
-        lead_data = {
-            'telegram_id': query.from_user.id,
-            'first_name': query.from_user.first_name,
-            'client_type': client_type,
-            'created_at': datetime.now().isoformat()
-        }
-        
-        db.create_lead(lead_data)
-        
-        await query.edit_message_text(
-            f"Gracias por seleccionar {client_type}. Por favor, escribe tu 
-nombre completo:"
-        )
-        context.user_data['step'] = 'nombre'
-        context.user_data['client_type'] = client_type
+    async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        help_text = """
+🤖 *Comandos disponibles:*
+/start - Iniciar el bot
+/help - Mostrar esta ayuda
+
+🏠 *Funcionalidades:*
+• Buscar propiedades en Florida
+• Asesoría inmobiliaria
+• Cálculo de inversiones
+• Contacto con agentes
+
+¿En qué puedo ayudarte?
+        """
+        await update.message.reply_text(help_text, parse_mode='Markdown')
     
-    async def handle_message(self, update: Update, context: 
-ContextTypes.DEFAULT_TYPE):
-        if 'step' in context.user_data:
-            step = context.user_data['step']
-            
-            if step == 'nombre':
-                context.user_data['nombre'] = update.message.text
-                context.user_data['step'] = 'telefono'
-                await update.message.reply_text("Gracias. Ahora escribe tu 
-número de teléfono:")
-            elif step == 'telefono':
-                context.user_data['telefono'] = update.message.text
-                context.user_data['step'] = 'email'
-                await update.message.reply_text("Ahora escribe tu email:")
-            elif step == 'email':
-                user_id = update.effective_user.id
-                updates = {
-                    'full_name': context.user_data['nombre'],
-                    'phone': context.user_data['telefono'],
-                    'email': update.message.text
-                }
-                db.update_lead(user_id, updates)
-                
-                keyboard = []
-                for zone in Config.FLORIDA_ZONES:
-                    keyboard.append([InlineKeyboardButton(zone, 
-callback_data=f"zone_{zone}")])
-                
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                await update.message.reply_text("Selecciona tu zona de 
-interés en Florida:", reply_markup=reply_markup)
-                del context.user_data['step']
-        else:
-            response = ai.generate_response(update.message.text)
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_message = update.message.text
+        user = update.effective_user
+        
+        try:
+            response = await ai.generar_respuesta(user_message, user.id)
             await update.message.reply_text(response)
+        except Exception as e:
+            logger.error(f"Error en handle_message: {e}")
+            await update.message.reply_text("Lo siento, hubo un error procesando tu mensaje. Intenta de nuevo.")
     
-    async def location_handler(self, update: Update, context: 
-ContextTypes.DEFAULT_TYPE):
+    async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
-        location = query.data.replace('zone_', '')
-        user_id = query.from_user.id
         
-        db.update_lead(user_id, {'location': location})
-        await query.edit_message_text(f"Perfecto! Un agente te contactará 
-pronto para la zona {location}.")
+        callback_data = query.data
+        
+        if callback_data == "comprador":
+            response = "Perfecto! Como comprador, puedo ayudarte a:\n\n• Buscar propiedades según tu presupuesto\n• Analizar zonas y precios\n• Conectarte con agentes certificados\n\n¿Qué tipo de propiedad buscas?"
+        elif callback_data == "inversor":
+            response = "Excelente! Como inversor, puedo ayudarte con:\n\n• Análisis de ROI en diferentes zonas\n• Propiedades con mejor potencial de apreciación\n• Estrategias de inversión en Florida\n\n¿Cuál es tu presupuesto de inversión?"
+        elif callback_data == "asesoria":
+            response = "Claro! Para asesoría personalizada:\n\n• Necesito saber tus objetivos específicos\n• Timeline de inversión\n• Presupuesto aproximado\n\n¿Podrías compartirme más detalles?"
+        else:
+            response = "Opción no reconocida. Usa /help para ver las opciones."
+        
+        await query.edit_message_text(response)
+    
+    async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        logger.error(f"Error: {context.error}")
+        
+        if update and update.effective_message:
+            try:
+                await update.effective_message.reply_text(
+                    "Lo siento, ocurrió un error. Por favor, intenta de nuevo o usa /start."
+                )
+            except:
+                pass
     
     def run(self):
-        application = Application.builder().token(self.token).build()
-        
-        application.add_handler(CommandHandler("start", self.start))
-        application.add_handler(CallbackQueryHandler(self.button_handler, 
-pattern='^(comprador|inversionista|recolocacion)$'))
-        
-application.add_handler(CallbackQueryHandler(self.location_handler, 
-pattern='^zone_'))
-        application.add_handler(MessageHandler(filters.TEXT & 
-~filters.COMMAND, self.handle_message))
-        
-        print("Bot iniciado...")
-        application.run_polling()
+        logger.info("Iniciando bot...")
+        self.application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-if __name__ == '__main__':
-    bot = InmoBot()
-    bot.run()
+if __name__ == "__main__":
+    try:
+        bot = InmoBot()
+        bot.run()
+    except Exception as e:
+        logger.error(f"Error al iniciar el bot: {e}")
+        print(f"Error crítico: {e}")
