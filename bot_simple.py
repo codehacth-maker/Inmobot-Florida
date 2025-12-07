@@ -6,6 +6,7 @@ from ai_handler import ai
 from datetime import datetime
 import logging
 
+# Configurar logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -15,15 +16,19 @@ logger = logging.getLogger(__name__)
 class InmoBot:
     def __init__(self):
         self.token = Config.TELEGRAM_TOKEN
-        self.application = Application.builder().token(self.token).build()
-        self.setup_handlers()
         
-    def setup_handlers(self):
-        self.application.add_handler(CommandHandler("start", self.start))
-        self.application.add_handler(CommandHandler("help", self.help))
-        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
-        self.application.add_handler(CallbackQueryHandler(self.button_callback))
-        self.application.add_error_handler(self.error_handler)
+    def create_application(self):
+        """Crear la aplicación correctamente"""
+        return Application.builder().token(self.token).build()
+    
+    def setup_handlers(self, application):
+        """Configurar todos los manejadores"""
+        application.add_handler(CommandHandler("start", self.start))
+        application.add_handler(CommandHandler("help", self.help))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+        application.add_handler(CallbackQueryHandler(self.button_callback))
+        application.add_error_handler(self.error_handler)
+        return application
     
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
@@ -106,9 +111,13 @@ class InmoBot:
                 pass
     
     def run(self):
+        """Iniciar el bot"""
         logger.info("Iniciando bot...")
-        self.application.run_polling(allowed_updates=Update.ALL_TYPES)
+        application = self.create_application()
+        application = self.setup_handlers(application)
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
 
+# Punto de entrada principal
 if __name__ == "__main__":
     try:
         bot = InmoBot()
