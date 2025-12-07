@@ -1,11 +1,10 @@
-import asyncio
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from config import Config
 from database import db
 from ai_handler import ai
 from datetime import datetime
-import logging
 
 # Configurar logging
 logging.basicConfig(
@@ -15,7 +14,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send a message when the command /start is issued."""
+    """Manejar el comando /start."""
     user = update.effective_user
     
     keyboard = [
@@ -42,7 +41,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"Error al registrar usuario: {e}")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send a message when the command /help is issued."""
+    """Manejar el comando /help."""
     help_text = """
 🤖 *Comandos disponibles:*
 /start - Iniciar el bot
@@ -59,7 +58,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle incoming text messages."""
+    """Manejar mensajes de texto."""
     user_message = update.message.text
     user = update.effective_user
     
@@ -71,7 +70,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("Lo siento, hubo un error procesando tu mensaje. Intenta de nuevo.")
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle button callbacks."""
+    """Manejar clics en botones."""
     query = update.callback_query
     await query.answer()
     
@@ -89,7 +88,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await query.edit_message_text(response)
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle errors."""
+    """Manejar errores."""
     logger.error(f"Error: {context.error}")
     
     if update and update.effective_message:
@@ -101,7 +100,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             pass
 
 def main() -> None:
-    """Start the bot."""
+    """Iniciar el bot."""
     # Crear la aplicación
     application = Application.builder().token(Config.TELEGRAM_TOKEN).build()
     
@@ -112,7 +111,7 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_error_handler(error_handler)
     
-    # Ejecutar el bot
+    # Iniciar el bot
     logger.info("Iniciando bot...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
